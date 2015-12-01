@@ -1,0 +1,69 @@
+package exp_sys;
+
+message Parameter {
+  required string name  = 1;  // unique
+  optional string value = 2;
+
+  enum Type {
+    BOOL   = 0;
+    INT    = 1;
+    DOUBLE = 2;
+    STRING = 3;
+  }
+
+  optional Type type    = 3;
+}
+
+enum Diversion {
+  RANDOM = 0;
+  UUID   = 1;
+  USER   = 2;
+  COOKIE = 3;
+}
+
+message Condition {
+  required string name = 1;  // unique
+  repeated string args = 2;
+}
+
+message BucketRange {
+  required int32 start = 1;  // contain start
+  required int32 end   = 2;  // do not contain end
+}
+
+message Layer {
+  required int32 id               = 1;  // unique
+  optional string name            = 2;
+  optional int32 domain_id        = 3 [ default = 0 ];
+  optional bool launch            = 4 [ default = false ];
+  optional int32 unbiased_id      = 5;
+  optional int32 fixed_biased_id  = 6 [ default = 0 ];
+  optional int32 random_biased_id = 7 [ default = 0 ];
+}
+
+message Domain {
+  required int32 id           = 1;  // unique
+  optional string name        = 2;
+  repeated BucketRange ranges = 3;
+}
+
+message Experiment {
+  required int32 id             = 1;  // unique
+  optional string name          = 2;
+  optional int32 layer_id       = 3;
+  optional int32 control_id     = 4;  // 控制组实验id，控制组等于自身id
+  optional string start_time    = 5;
+  optional string end_time      = 6;
+  optional Diversion diversion  = 7;
+
+  repeated Parameter parameters = 8;
+  repeated Condition conditions = 9;
+  repeated BucketRange ranges   = 10;
+}
+
+message Deployment {
+  repeated Parameters paramters   = 1;
+  repeated Layer layers           = 2;
+  repeated Domain domains         = 3;
+  repeated Experiment experiments = 4;
+}
