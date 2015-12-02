@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8; tab-width: 4; -*-
-# @(#) exp_db.py  Time-stamp: <Julian Qian 2015-12-01 17:57:27>
+# @(#) exp_db.py  Time-stamp: <Julian Qian 2015-12-02 14:58:36>
 # Copyright 2015 Julian Qian
 # Author: Julian Qian <junist@gmail.com>
 # Version: $Id: exp_db.py,v 0.1 2015-11-27 17:07:33 jqian Exp $
@@ -17,8 +17,8 @@ DbConf = collections.namedtuple('DbConf', 'host,port,user,password,database')
 
 DomainRow = collections.namedtuple('DomainRow', 'id,parent_id,name,buckets_num')
 LayerRow = collections.namedtuple('LayerRow', 'id,domain_id,name,launch')
-ExpRow = collections.namedtuple('ExpRow', '''id,layer_id,name,diversion,
-    conditions,parameters,buckets_num''')
+ExpRow = collections.namedtuple('ExpRow', 'id,layer_id,name,diversion,start_time,' +
+                                'end_time,conditions,parameters,buckets_num')
 ParamRow = collections.namedtuple('ParamRow', 'name,value,type')
 
 
@@ -44,10 +44,9 @@ class ExpDb(object):
 
     def get_experiments(self):
         # TODO: treate `PAUSE`` status
-        sql = '''select id,layer_id,name,diversion,conditions,
-            parameters,buckets_num
-            from experiment where status='published' and
-            start_time > now() and end_time < now()
+        sql = '''select id,layer_id,name,diversion,start_time,end_time,
+            conditions,parameters,buckets_num
+            from experiment where status in ('published','deploy')
             order by id
         '''
         cur = self.cnx.cursor()
@@ -57,7 +56,7 @@ class ExpDb(object):
 
     def get_parameter(self, name):
         sql = '''select name, value, type
-        from parameters where name='{}'
+        from parameter where name='{}'
         '''.format(name)
         cur = self.cnx.cursor()
         cur.execute(sql)
@@ -75,8 +74,8 @@ class ExpPb(object):
         data = open(pbfile).read()
         self.deploy.ParseFromString(data)
 
-    def pb(self):
-        return self.deploy
+    def get_experiments(self):
+        return self.deploy.experiments
 
     def write(self, pbdata, pbfile):
         with open(pbfile, 'w') as fp:

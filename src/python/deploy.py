@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8; tab-width: 4; -*-
-# @(#) deploy.py  Time-stamp: <Julian Qian 2015-12-01 18:01:16>
+# @(#) deploy.py  Time-stamp: <Julian Qian 2015-12-02 15:27:15>
 # Copyright 2015 Julian Qian
 # Author: Julian Qian <junist@gmail.com>
 # Version: $Id: deploy.py,v 0.1 2015-11-10 11:24:01 jqian Exp $
@@ -16,15 +16,16 @@
 import argparse
 import ConfigParser
 
-from exp_deploy import DbConf, ExpDeploy
-from exp_db import ExpDb, ExpPb
+from exp_deploy import ExpDeploy
+from exp_db import DbConf, ExpDb, ExpPb
+from exp_log import logger
 
 
 def main():
     parser = argparse.ArgumentParser(description='generate exp_sys pb file')
-    parser.add_argument('--conf', type=str, help='config file')
+    parser.add_argument('--conf', type=str, required=True, help='config file')
     parser.add_argument('--input', type=str, help='input file name')
-    parser.add_argument('--output', type=str, help='output file name')
+    parser.add_argument('--output', type=str, required=True, help='output file name')
     parser.add_argument('--dry', action='store_true', help='whether dry run')
     parser.add_argument('--verbose', action='store_true', help='print verbose log')
     args = parser.parse_args()
@@ -37,9 +38,15 @@ def main():
                            config.get('mysql', 'passwd'),
                            config.get('mysql', 'dbname')])
     db = ExpDb(dbconf)
-    pb = ExpPb(args.input)
+    pb = None
+    try:
+        pb = ExpPb(args.input)
+    except:
+        logger.warn('failed to load pb file %s', args.input)
     ed = ExpDeploy(db, pb)
     data = ed.build()
+    logger.info('dump deployment (%d bytes) to file %s',
+                len(data), args.output)
     with open(args.output, 'w') as fp:
         fp.write(data)
 

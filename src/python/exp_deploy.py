@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8; tab-width: 4; -*-
-# @(#) exp_deploy.py  Time-stamp: <Julian Qian 2015-12-01 17:50:28>
+# @(#) exp_deploy.py  Time-stamp: <Julian Qian 2015-12-02 15:24:51>
 # Copyright 2015 Julian Qian
 # Author: Julian Qian <junist@gmail.com>
 # Version: $Id: exp_deploy.py,v 0.1 2015-11-27 17:05:18 jqian Exp $
@@ -12,7 +12,7 @@ from exp_defs import *
 from exp_log import logger
 
 
-def ExpDeploy(object):
+class ExpDeploy(object):
     def __init__(self, expdb, pb=None):
         self.db = expdb
         self.pb = pb
@@ -28,18 +28,24 @@ def ExpDeploy(object):
         root_domain = None
         for d in domains:
             if d.id == d.parent_id:
-                root_domain = Domain.from_num(d.id, d.buckets_num)
+                root_domain = Domain.from_num(d.id, 0, d.buckets_num)
                 self.domains[d.id] = root_domain
+                logger.debug('root domain %d, buckets_num %d',
+                             d.id, d.buckets_num)
                 break
         # find subdomain
         for d in domains:
-            if d.parent_id == root_domain.id:
+            if d.parent_id == root_domain.id and d.id != root_domain.id:
+                logger.debug('process subdomain %d, buckets_num %d',
+                             d.id, d.buckets_num)
                 bucketRanges = root_domain.assign(d.id, d.buckets_num)
                 self.domains[d.id] = Domain(d.id, bucketRanges)
 
     def _build_layers(self):
         layers = self.db.get_layers()
         for l in layers:
+            logger.debug('process layer %d in domain %d',
+                         l.id, l.domain_id)
             layer = Layer(l.id, self.domains[l.domain_id])
             self.layers[l.id] = layer
 
@@ -50,7 +56,7 @@ def ExpDeploy(object):
             db_exps[e.id] = e
         pb_exps = {}
         if self.pb:
-            for l in self.pb.experiments:
+            for l in self.pb.get_experiments():
                 pb_exps[l.id] = Experiment.from_pb(l)
         for e in pb_exps:
             layer = self.layers.get(e.layer_id)
@@ -81,18 +87,20 @@ def ExpDeploy(object):
         deploy = expb.Deployment()
         # parameters & experiments
         for e in self.exps.values():
-            deploy.experiments.append(e.to_pb())
+            print e
+            deploy.experiments.add().CopyFrom(e.to_pb())
+            # deploy.experiments.append(e.to_pb())
             for p in e.parameters:
                 pp = self.db.get_parameter(p.name)
                 param = Parameter(pp.name, pp.value, pp.value)
-                deploy.parameters.append(param.to_pb())
+                deploy.parameters.add().CopyFrom(param.to_pb())
         # domains
         for d in self.domains.values():
-            deploy.domains.append(d.to_pb())
+            deploy.domains.add().CopyFrom(d.to_pb())
         # layers
         for d in self.layers.values():
-            deploy.layers.append(d.to_pb())
-        return deploy
+            deploy.layers.add().CopyFrom(d.to_pb())
+        return deploy.SerializeToString()
 
 
 def main():

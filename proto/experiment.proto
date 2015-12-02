@@ -62,7 +62,7 @@ message Experiment {
 }
 
 message Deployment {
-  repeated Parameters paramters   = 1;
+  repeated Parameter parameters   = 1;
   repeated Layer layers           = 2;
   repeated Domain domains         = 3;
   repeated Experiment experiments = 4;

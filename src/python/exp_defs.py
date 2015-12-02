@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8; tab-width: 4; -*-
-# @(#) exp_defs.py  Time-stamp: <Julian Qian 2015-12-01 17:49:49>
+# @(#) exp_defs.py  Time-stamp: <Julian Qian 2015-12-02 15:24:06>
 # Copyright 2015 Julian Qian
 # Author: Julian Qian <junist@gmail.com>
 # Version: $Id: exp_defs.py,v 0.1 2015-11-13 17:09:51 jqian Exp $
@@ -13,15 +13,18 @@ import experiment_pb2 as expb
 from exp_log import logger
 
 
-Bucket = collections.namedtuple('Bucket', 'offset,assign_id')
-
-
 class BucketError(Exception):
     def __init__(self, value):
         self.value = value
 
     def __str__(self):
         return repr(self.value)
+
+
+class Bucket(object):
+    def __init__(self, offset, assign_id):
+        self.offset = offset
+        self.assign_id = assign_id
 
 
 class Buckets(object):
@@ -36,6 +39,8 @@ class Buckets(object):
         return '<%d buckets, inited %d>' % (len(self.buckets), self.init_id)
 
     def get_bucket_ranges(self):
+        '''@return a list of BucketRange
+        '''
         # TODO O(1) or O(n)?
         bucketRanges = []
         for bucket in self.buckets:
@@ -154,12 +159,15 @@ class Domain(object):
     def to_pb(self):
         pb = expb.Domain()
         pb.id = self.id
-        for i in pb.get_bucket_ranges():
-            pb.ranges.append(i)
+        for i in self.buckets.get_bucket_ranges():
+            pb.ranges.add().CopyFrom(i.to_pb())
         return pb
 
     def assign(self, assign_id, buckets_num):
         return self.buckets.assign(assign_id, buckets_num)
+
+    def __str__(self):
+        return "<Domain %d: %s>" % (self.id, self.buckets)
 
 
 class Layer(object):
@@ -184,6 +192,9 @@ class Layer(object):
     def assign(self, assign_id, buckets_num):
         return self.buckets.assign(assign_id, buckets_num)
 
+    def __str__(self):
+        return "<Layer %d (D%d)>" % (self.id, self.domain_id)
+
 
 class Diversion(object):
     def __init__(self, type):
@@ -195,11 +206,11 @@ class Diversion(object):
 
     @classmethod
     def from_db(cls, type):
-        t = expb.Diversion.RANDOM
+        t = expb.RANDOM
         if type == 'uuid':
-            t = expb.Diversion.UUID
+            t = expb.UUID
         elif type == 'user':
-            t = expb.Diversion.USER
+            t = expb.USER
         return cls(t)
 
     def to_pb(self):
@@ -221,15 +232,43 @@ class Condition(object):
         pb = expb.Condition()
         pb.name = self.name
         for arg in self.args:
-            pb.args.append(arg)
+            pb.args.add().CopyFrom(arg)
         return pb
+
+    def __str__(self):
+        return "<Condition %s>" % self.name
 
 
 class Parameter(object):
     def __init__(self, name, value, type=None):
         self.name = name
         self.value = value
-        self.type = type
+        if type:
+            self.type = self._trans_type(type)
+        else:
+            self.type = self._valid_type(value)
+
+    @staticmethod
+    def _valid_type(value):
+        t = expb.Parameter.STRING
+        if isinstance(value, bool):
+            t = expb.Parameter.BOOL
+        elif isinstance(value, int):
+            t = expb.Parameter.INT
+        elif isinstance(value, float):
+            t = expb.Parameter.DOUBLE
+        return t
+
+    @staticmethod
+    def _trans_type(type):
+        t = expb.Parameter.STRING
+        if type.lower() == 'int':
+            t = expb.Parameter.INT
+        elif type.lower() == 'bool':
+            t = expb.Parameter.BOOL
+        elif type.lower() == 'double':
+            expb.Parameter.DOUBLE
+        return t
 
     @classmethod
     def from_pb(cls, pb):
@@ -238,8 +277,12 @@ class Parameter(object):
     def to_pb(self):
         pb = expb.Parameter()
         pb.name = self.name
-        pb.value = self.value
+        pb.value = str(self.value)
+        pb.type = self.type
         return pb
+
+    def __str__(self):
+        return "<Parameter %s: %s>" % (self.name, self.value)
 
 
 class Experiment(object):
@@ -274,16 +317,13 @@ class Experiment(object):
     @classmethod
     def from_db(cls, row):
         diversion = Diversion.from_db(row.diversion)
-        ret = json.loads(row.parameters)
-        parameters = []
-        if isinstance(ret, dict):
-            parameters = [Parameter(name, value) for name, value in ret.items()]
-        ret = json.loads(row.conditions)
-        conditions = []
-        if isinstance(ret, dict):
-            conditions = [Condition(name, args) for name, args in ret.items()]
+        logger.debug('row: %s', row)
+        ret = json.loads(row.parameters) if row.parameters else {}
+        parameters = [Parameter(name, value) for name, value in ret.items()]
+        ret = json.loads(row.conditions) if row.conditions else {}
+        conditions = [Condition(name, args) for name, args in ret.items()]
         return cls(row.id, row.layer_id, diversion,
-                   row.start_time, row.end_time,
+                   '%s' % row.start_time, '%s' % row.end_time,
                    None, parameters, conditions)
 
     def to_pb(self):
@@ -294,11 +334,12 @@ class Experiment(object):
         pb.start_time = self.start_time
         pb.end_time = self.end_time
         for i in self.ranges:
-            pb.ranges.append(i.to_pb())
+            pb.ranges.add().CopyFrom(i.to_pb())
         for i in self.parameters:
-            pb.parameters.append(i.to_pb())
+            pb.parameters.add().CopyFrom(i.to_pb())
         for i in self.conditions:
-            pb.conditions.append(i.to_pb())
+            pb.conditions.add().CopyFrom(i.to_pb())
+        return pb
 
     def set_bucket_ranges(self, bucketRanges):
         '''fill BucketRanges after calling `from_db`
@@ -314,6 +355,9 @@ class Experiment(object):
                         return False
                 return True
         return False
+
+    def __str__(self):
+        return "<Experiment %d (L%d)>" % (self.id, self.layer_id)
 
 
 def main():
