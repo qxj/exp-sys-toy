@@ -36,15 +36,12 @@ message Layer {
   optional string name            = 2;
   optional int32 domain_id        = 3 [ default = 0 ];
   optional bool launch            = 4 [ default = false ];
-  optional int32 unbiased_id      = 5;
-  optional int32 fixed_biased_id  = 6 [ default = 0 ];
-  optional int32 random_biased_id = 7 [ default = 0 ];
 }
 
 message Domain {
   required int32 id           = 1;  // unique
   optional string name        = 2;
-  repeated BucketRange ranges = 3;
+  optional BucketRange range  = 3;  // one BucketRange is enough for domain diversion
 }
 
 message Experiment {
@@ -58,7 +55,7 @@ message Experiment {
 
   repeated Parameter parameters = 8;
   repeated Condition conditions = 9;
-  repeated BucketRange ranges   = 10;
+  repeated BucketRange ranges   = 10;  // experiment buckets would be discrete
 }
 
 message Deployment {

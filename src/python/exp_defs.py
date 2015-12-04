@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8; tab-width: 4; -*-
-# @(#) exp_defs.py  Time-stamp: <Julian Qian 2015-12-02 15:24:06>
+# @(#) exp_defs.py  Time-stamp: <Julian Qian 2015-12-02 17:56:08>
 # Copyright 2015 Julian Qian
 # Author: Julian Qian <junist@gmail.com>
 # Version: $Id: exp_defs.py,v 0.1 2015-11-13 17:09:51 jqian Exp $
@@ -159,8 +159,11 @@ class Domain(object):
     def to_pb(self):
         pb = expb.Domain()
         pb.id = self.id
-        for i in self.buckets.get_bucket_ranges():
-            pb.ranges.add().CopyFrom(i.to_pb())
+        bucketRanges = self.buckets.get_bucket_ranges()
+        if len(bucketRanges) > 1:
+            logger.warn('domain %d, something wrong? to many buckets',
+                        self.id)
+        pb.range.CopyFrom(bucketRanges[0].to_pb())
         return pb
 
     def assign(self, assign_id, buckets_num):
