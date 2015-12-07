@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8; tab-width: 4; -*-
-# @(#) exp_deploy.py  Time-stamp: <Julian Qian 2015-12-02 15:24:51>
+# @(#) exp_deploy.py  Time-stamp: <Julian Qian 2015-12-08 16:28:32>
 # Copyright 2015 Julian Qian
 # Author: Julian Qian <junist@gmail.com>
 # Version: $Id: exp_deploy.py,v 0.1 2015-11-27 17:05:18 jqian Exp $
@@ -86,14 +86,17 @@ class ExpDeploy(object):
         self._build_experiments()
         deploy = expb.Deployment()
         # parameters & experiments
+        params = {}
         for e in self.exps.values():
             print e
             deploy.experiments.add().CopyFrom(e.to_pb())
             # deploy.experiments.append(e.to_pb())
             for p in e.parameters:
                 pp = self.db.get_parameter(p.name)
-                param = Parameter(pp.name, pp.value, pp.value)
-                deploy.parameters.add().CopyFrom(param.to_pb())
+                param = Parameter(pp.name, pp.value, pp.type)
+                params[pp.name] = param
+        for p in params.values():
+            deploy.parameters.add().CopyFrom(p.to_pb())
         # domains
         for d in self.domains.values():
             deploy.domains.add().CopyFrom(d.to_pb())

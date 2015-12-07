@@ -1,11 +1,13 @@
 <?php
-// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-07 17:07:08>
+// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-08 16:19:16>
 // Copyright 2015 Julian Qian
 // Author: Julian Qian <junist@gmail.com>
 // Version: $Id: exp_defs.php,v 0.1 2015-12-02 16:12:19 jqian Exp $
 //
 
-require_once "exp_log.php";
+if (!class_exists("Logger")) {
+  require_once __DIR__ . "/exp_log.php";
+}
 
 define("BUCKETS_NUM_MAX", 10000);
 
@@ -13,8 +15,8 @@ define("BUCKETS_NUM_MAX", 10000);
 class BucketRange {
   public
   function __construct($start=0, $end=0) {
-    $this->start = $start;
-    $this->end = $end;
+    $this->start = intval($start);
+    $this->end = intval($end);
   }
 
   public static
@@ -30,6 +32,16 @@ class BucketRange {
   public
   function contain($idx) {
     return $idx >= $this->start && $idx < $this->end;
+  }
+
+  public
+  function getStart() {
+    return $this->start;
+  }
+
+  public
+  function getEnd() {
+    return $this->end;
   }
 
   public
@@ -55,22 +67,24 @@ class Buckets {
 
   private
   function _assign($bucketRange, $expId) {
-    $start = $bucketRange->start;
-    if ($start < $this->range->start) {
-      // error
-      $start = $this->range->start;
+    $start = $bucketRange->getStart();
+    if ($start < $this->range->getStart()) {
+      $start = $this->range->getStart();
+      Logger::error("experiment %d start %d out of range %s",
+              $expId, $start, $bucketRange->toString());
     }
-    $end = $bucketRange->end;
-    if ($end > $this->range->end) {
-      // error
-      $end = $this->range->end;
+    $end = $bucketRange->getEnd();
+    if ($end > $this->range->getEnd()) {
+      $end = $this->range->getEnd();
+      Logger::error("experiment %d end %d out of range %s",
+              $expId, $end, $bucketRange->toString());
     }
 
-    for ($i=$start-$this->range->start;
-         $i<$end-$start; $i++) {
+    for ($i=$start - $this->range->getStart();
+         $i<$end - $this->range->getStart(); $i++) {
       $this->buckets[$i] = $expId;
     }
-    Logger::info("assign exp %d to range %s", $expId, $bucketRange->toString());
+    Logger::debug("assign exp %d to range %s", $expId, $bucketRange->toString());
   }
 
   public
@@ -83,7 +97,7 @@ class Buckets {
   public
   function locate($idx) {
     if ($this->range->contain($idx)) {
-      $offset = $idx - $this->range->start;
+      $offset = $idx - $this->range->getStart();
       return $this->buckets[$offset];
     }
     return -1;
@@ -93,7 +107,7 @@ class Buckets {
 class Domain {
   public
   function __construct($id, $bucketRange) {
-    $this->id = $id;
+    $this->id = intval($id);
     $this->range = $bucketRange;
   }
 
@@ -122,7 +136,7 @@ class Domain {
 class Layer {
   public
   function __construct($id, $domain) {
-    $this->id = $id;
+    $this->id = intval($id);
     $this->domain_id = $domain->getId();
     $this->buckets = new Buckets($domain->getBucketRange());
 
@@ -138,6 +152,7 @@ class Layer {
 
   public
   function assign($exp) {
+    Logger::debug("layer %d assign exp %d", $this->id, $exp->getId());
     $this->buckets->assign($exp->getRanges(), $exp->getId());
   }
 
@@ -165,8 +180,8 @@ class Experiment {
   public
   function __construct($id, $layer_id, $start_time, $end_time,
           $diversion, $parameters, $conditions, $bucketRanges) {
-    $this->id = $id;
-    $this->layer_id = $layer_id;
+    $this->id = intval($id);
+    $this->layer_id = intval($layer_id);
     $this->start_time = $start_time;
     $this->end_time = $end_time;
     $this->diversion = $diversion;
@@ -198,10 +213,9 @@ class Experiment {
     foreach ($pb->getRanges() as $range) {
       $ranges[] = BucketRange::fromPb($range);
     }
-    $inst = new self($pb->getId(), $pb->getLayerId(),
+    return new self($pb->getId(), $pb->getLayerId(),
             $pb->getStartTime(), $pb->getEndTime(), $pb->getDiversion(),
             $parameters, $conditions, $ranges);
-    return $inst;
   }
 
   public
@@ -228,6 +242,11 @@ class Experiment {
   public
   function getLayerId() {
     return $this->layer_id;
+  }
+
+  public
+  function getDiversion() {
+    return $this->diversion;
   }
 
   public
@@ -261,7 +280,7 @@ class Parameter {
   public
   function __construct($name, $value, $type=null) {
     $this->name = $name;
-    switch ($this->type) {
+    switch ($type) {
       case \exp_sys\Parameter\Type::BOOL:
         if (strtolower($value) == 'true') {
           $this->value = true;
