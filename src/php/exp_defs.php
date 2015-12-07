@@ -1,10 +1,11 @@
 <?php
-// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-04 10:55:28>
+// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-07 17:07:08>
 // Copyright 2015 Julian Qian
 // Author: Julian Qian <junist@gmail.com>
 // Version: $Id: exp_defs.php,v 0.1 2015-12-02 16:12:19 jqian Exp $
 //
 
+require_once "exp_log.php";
 
 define("BUCKETS_NUM_MAX", 10000);
 
@@ -30,6 +31,11 @@ class BucketRange {
   function contain($idx) {
     return $idx >= $this->start && $idx < $this->end;
   }
+
+  public
+  function toString() {
+    return sprintf("<BucketRange %d~%d>", $this->start, $this->end);
+  }
 }
 
 class Buckets {
@@ -40,6 +46,11 @@ class Buckets {
     for ($i=0; $i<$bucketRange->num(); $i++) {
       $this->buckets[] = -1;
     }
+  }
+
+  public
+  function toString() {
+    return sprintf("<Buckets %s>", $this->range->toString());
   }
 
   private
@@ -59,6 +70,7 @@ class Buckets {
          $i<$end-$start; $i++) {
       $this->buckets[$i] = $expId;
     }
+    Logger::info("assign exp %d to range %s", $expId, $bucketRange->toString());
   }
 
   public
@@ -80,7 +92,7 @@ class Buckets {
 
 class Domain {
   public
-  function __construct($id=0, $bucketRange=array()) {
+  function __construct($id, $bucketRange) {
     $this->id = $id;
     $this->range = $bucketRange;
   }
@@ -90,34 +102,47 @@ class Domain {
     $range = $pb->getRange();
     return new self($pb->getId(), BucketRange::fromPb($range));
   }
+
+  public
+  function getId() {
+    return $this->id;
+  }
+
+  public
+  function getBucketRange() {
+    return $this->range;
+  }
+
+  public
+  function toString() {
+    return sprintf("<Domain %d, %s>", $this->id, $this->range->toString());
+  }
 }
 
 class Layer {
   public
-  function __construct($id=0, $domain) {
+  function __construct($id, $domain) {
     $this->id = $id;
-    $this->buckets = new Buckets($domain->range);
+    $this->domain_id = $domain->getId();
+    $this->buckets = new Buckets($domain->getBucketRange());
 
     $this->biased = false;
     srand(time());
   }
 
   public
-  function assign($exp) {
-    $this->buckets->assign($exp->getBucketRanges(), $exp->getId());
+  function toString() {
+    return sprintf("<Layer %d, domain %d, %s>", $this->id,
+                   $this->domain_id, $this->buckets->toString());
   }
 
   public
-  function divert($type, $id=null) {
-    switch ($type) {
-      case 'uuid':
-        $idx = hash_id($uuid) % BUCKETS_NUM_MAX;
-        break;
-      default:  // random
-        $idx = rand(0, BUCKETS_NUM_MAX -1);
-        break;
-    }
+  function assign($exp) {
+    $this->buckets->assign($exp->getRanges(), $exp->getId());
+  }
 
+  public
+  function divert($idx) {
     return $this->buckets->locate($idx);
   }
 
@@ -128,6 +153,11 @@ class Layer {
     } else {
       $this->biased = $biased?true:false;
     }
+  }
+
+  public
+  function getId() {
+    return $this->id;
   }
 }
 
@@ -142,21 +172,35 @@ class Experiment {
     $this->diversion = $diversion;
     $this->parameters = $parameters;
     $this->conditions = $conditions;
+    $this->ranges = $bucketRanges;
+  }
+
+  public
+  function toString() {
+    return sprintf("<Exp %d, layer %d, time (%s~%s)>", $this->id,
+                   $this->layer_id, $this->start_time, $this->end_time);
   }
 
   public static
   function fromPb($pb) {
     $parameters = array();
-    foreach ($pb->getParametersList() as $parameter) {
-      $parameters[$parameter->getName()] = Parameter::fromPb($parameter->getValue());
+    foreach ($pb->getParameters() as $p) {
+      $param = Parameter::fromPb($p);
+      $parameters[$param->getName()] = $param->getValue();
     }
     $conditions = array();
-    foreach ($pb->getConditionsList() as $condition) {
-      $conditions[$condition->getName()] = Condition::fromPb($condition->getArgsList());
+    foreach ($pb->getConditions() as $c) {
+      $cond = Condition::fromPb($c);
+      $conditions[$cond->getName()] = $cond->getArgs();
+    }
+    // TODO ranges seems useless
+    $ranges = array();
+    foreach ($pb->getRanges() as $range) {
+      $ranges[] = BucketRange::fromPb($range);
     }
     $inst = new self($pb->getId(), $pb->getLayerId(),
             $pb->getStartTime(), $pb->getEndTime(), $pb->getDiversion(),
-            $parameters, $conditions);
+            $parameters, $conditions, $ranges);
     return $inst;
   }
 
@@ -169,6 +213,21 @@ class Experiment {
     } else {
       return false;
     }
+  }
+
+  public
+  function getRanges() {
+    return $this->ranges;
+  }
+
+  public
+  function getId() {
+    return $this->id;
+  }
+
+  public
+  function getLayerId() {
+    return $this->layer_id;
   }
 
   public
@@ -204,7 +263,7 @@ class Parameter {
     $this->name = $name;
     switch ($this->type) {
       case \exp_sys\Parameter\Type::BOOL:
-        if ($value == 'true') {
+        if (strtolower($value) == 'true') {
           $this->value = true;
         } else {
           $this->value = false;
@@ -226,6 +285,16 @@ class Parameter {
   function fromPb($pb) {
     return new self($pb->getName(), $pb->getValue(), $pb->getType());
   }
+
+  public
+  function getName() {
+    return $this->name;
+  }
+
+  public
+  function getValue() {
+    return $this->value;
+  }
 }
 
 class Condition {
@@ -237,6 +306,16 @@ class Condition {
 
   public static
   function fromPb($pb) {
-    return new self($pb->getName(), $pb->getArgsList());
+    return new self($pb->getName(), $pb->getArgs());
+  }
+
+  public
+  function getName() {
+    return $this->name;
+  }
+
+  public
+  function getArgs() {
+    return $this->args;
   }
 }

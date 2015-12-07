@@ -1,5 +1,5 @@
 <?php
-// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-04 11:29:25>
+// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-07 17:15:31>
 // Copyright 2015 Julian Qian
 // Author: Julian Qian <junist@gmail.com>
 // Version: $Id: exp_defs.php,v 0.1 2015-11-18 11:14:00 jqian Exp $
@@ -10,12 +10,14 @@
 // Extract exp_sys configuration from pb file, and build experiment space to
 // divert each request.
 
-require_once "DrSlump/Protobuf.php";
+// require_once "/usr/share/php/DrSlump/Protobuf.php";
 
-require_once "experiment.php";
+error_reporting(E_ALL ^ E_NOTICE);
+
+require_once "experiment.proto.php";
 require_once "exp_defs.php";
 
-use \DrSlump\Protobuf;
+// use \DrSlump\Protobuf;
 use \exp_sys as exp;
 
 class ExpSys {
@@ -33,6 +35,9 @@ class ExpSys {
 
   private
   function __construct() {
+    srand(time());
+    $this->_rand_id = rand(0, BUCKETS_NUM_MAX -1);
+    //
     $this->_build();
     $this->_divert();
   }
@@ -42,22 +47,30 @@ class ExpSys {
     $deploy = $this->_get_deploy();
     // get domains
     $domains = array();
-    foreach ($deploy->getDomainsList() as $domain) {
-      $domains[$domain->getId()] = Domain::fromPb($domain);
+    foreach ($deploy->getDomains() as $d) {
+      $domain = Domain::fromPb($d);
+      $domains[$domain->getId()] = $domain;
+      Logger::info("load domain %s", $domain->toString());
     }
     // get layers
-    foreach ($deploy->getLayersList() as $layer) {
-      $domain = $domains[$layer->getDomainId()];
-      $this->_layers[] = new Layer($layer->getId(), $domain);
+    foreach ($deploy->getLayers() as $l) {
+      $domain = $domains[$l->getDomainId()];
+      $layer = new Layer($l->getId(), $domain);
+      $this->_layers[] = $layer;
+      Logger::info("load layer %s", $layer->toString());
     }
     // assign experiments
-    foreach ($deploy->getExperimentsList() as $exp) {
-      $this->_exps[$exp->getId()] = Experiment::fromPb($exp);
+    foreach ($deploy->getExperiments() as $e) {
+      $exp = Experiment::fromPb($e);
+      $this->_exps[$exp->getId()] = $exp;
       $layer = $this->_layers[$exp->getLayerId()];
       $layer->assign($exp);
+      Logger::info("load exp %s", $exp->toString());
     }
-    foreach ($deploy->getParametersList() as $param) {
+    foreach ($deploy->getParameters() as $p) {
+      $param = Parameter::fromPb($p);
       $this->_baseParams[$param->getName()] = $param->getValue();
+      Logger::info("load param %s", $param->getName());
     }
   }
 
@@ -79,14 +92,13 @@ class ExpSys {
 
   private
   function _get_deploy_pb() {
-    Protobuf::autoload();
     // init experiment space from pb
     $pb_file = '../../bin/exp_sys.pb';
     if (class_exists('F3')) {
       $pb_file = F3::get('PDEXP.FILE');
     }
     $data = file_get_contents($pb_file);
-    return new exp\Deployment($data);
+    return exp\Deployment::parseFromString($data);
   }
 
   private static
@@ -100,14 +112,14 @@ class ExpSys {
       case 'uuid':
         return $this->_hash_id($_SERVER['HTTP_UUID']);
       default:
-        return rand(0, BUCKETS_NUM_MAX -1);
+        return $this->_rand_id;
     }
   }
 
   private
   function _valid_conditions($exp) {
     $ret = true;
-    foreach ($exp->getConds() as $cond => $args) {
+    foreach ($exp->getCondMap() as $cond => $args) {
       switch ($cond) {
         case 'browser':
           // TODO
@@ -129,11 +141,15 @@ class ExpSys {
   private
   function _divert() {
     foreach ($this->_diversions as $diversion) {
+      Logger::info("start diversion by %s", $diversion);
       foreach ($this->_layers as &$layer) {
+        Logger::info("process layer %d", $layer->getId());
         if (!$layer->bias()) {
-          $idx = $this->_get_divert_id($diversion) % BUCKETS_NUM_MAX;
-          $expId = $layer->divert($idx);
+          $divId = $this->_get_divert_id($diversion) % BUCKETS_NUM_MAX;
+          Logger::info("divert id: %d", $divId);
+          $expId = $layer->divert($divId);
           if ($expId > 0) {
+            Logger::info("divert to experiment %d", $expId);
             $exp = $this->_exps[$expId];
             // check time
             if ($this->_valid_time($exp)) {
@@ -141,8 +157,11 @@ class ExpSys {
               if ($this->_valid_conditions($exp)) {
                 $this->_params = array_merge($this->_params, $exp->getParamMap());
               } else {
+                Logger::info("biased layer %d", $layer->getId());
                 $layer->bias(true);
               }
+            } else {
+              Logger::info("experiment %d is out of time", $expId);
             }
           }
         }
@@ -158,8 +177,22 @@ class ExpSys {
     return self::$_instance;
   }
 
-  public
-  function get($name) {
+  public static
+  function __callStatic($method, $argv) {
+    switch($method) {
+      case "get":
+        $name = array_shift($argv);
+        return self::instance()->_get($name);
+      case "requested_params":
+        return self::instance()->_requested_params();
+      default:
+        Logger::error("wrong method.");
+        return;
+    }
+  }
+
+  private
+  function _get($name) {
     if (in_array($name, $this->_params)) {
       $value = $this->_params[$name];
       // log parameters
@@ -172,8 +205,8 @@ class ExpSys {
     return null;
   }
 
-  public
-  function get_requested_params() {  // for logger and stats
+  private
+  function _requested_params() {  // for logger and stats
     return $this->_reqParams;
   }
 }
