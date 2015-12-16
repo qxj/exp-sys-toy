@@ -1,5 +1,5 @@
 <?php
-// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-08 16:44:24>
+// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-10 12:29:16>
 // Copyright 2015 Julian Qian
 // Author: Julian Qian <junist@gmail.com>
 // Version: $Id: exp_defs.php,v 0.1 2015-11-18 11:14:00 jqian Exp $
@@ -39,7 +39,7 @@ class ExpSys {
     srand(time());
     $this->_diversions[DIV::RANDOM] = rand(0, BUCKETS_NUM_MAX -1);
     if (isset($_SERVER['HTTP_UUID'])) {
-      $this->_diversions[DIV::UUID] = self::_hash_id($_SERVER['HTTP_UUID']);
+      $this->_diversions[DIV::UUID] = $_SERVER['HTTP_UUID'];
     }
     //
     try {
@@ -117,6 +117,12 @@ class ExpSys {
     return intval(substr(hash('md5', $id), 0, 8), 16);
   }
 
+  private static
+  function _divert_id($id, $layer_id) {
+    $new_id = sprintf("%s_%s", $id, $layer_id);
+    return self::hash_id($new_id) % BUCKETS_NUM_MAX;
+  }
+
   private
   function _valid_conditions($exp) {
     $ret = true;
@@ -146,7 +152,7 @@ class ExpSys {
         foreach ($this->_layers as &$layer) {
           Logger::debug("process layer %d", $layer->getId());
           if (!$layer->bias()) {
-            $modId = $divId % BUCKETS_NUM_MAX;
+            $modId = self::_divert_id($divId, $layer->getId());
             Logger::debug("divert id: %d, mod id: %d", $divId, $modId);
             $expId = $layer->divert($modId);
             if ($expId > 0) {
