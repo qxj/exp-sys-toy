@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8; tab-width: 4; -*-
-# @(#) exp_db.py  Time-stamp: <Julian Qian 2015-12-02 14:58:36>
+# @(#) exp_db.py  Time-stamp: <Julian Qian 2015-12-18 16:24:27>
 # Copyright 2015 Julian Qian
 # Author: Julian Qian <junist@gmail.com>
 # Version: $Id: exp_db.py,v 0.1 2015-11-27 17:07:33 jqian Exp $
 #
 
-import sys
 import collections
-import experiment_pb2 as expb
+import json
 import mysql.connector
 
 from exp_log import logger
@@ -67,19 +66,16 @@ class ExpDb(object):
             return None
 
 
-class ExpPb(object):
-    def __init__(self, pbfile):
-        self.deploy = expb.Deployment()
-        # TODO: error treatment
-        data = open(pbfile).read()
-        self.deploy.ParseFromString(data)
+class ExpJson(object):
+    def __init__(self, jsonfile):
+        self.deploy = json.load(open(jsonfile))
 
     def get_experiments(self):
-        return self.deploy.experiments
+        return self.deploy['experiments']
 
-    def write(self, pbdata, pbfile):
-        with open(pbfile, 'w') as fp:
-            fp.write(pbdata)
+    def write(self, data, filename):
+        with open(filename, 'w') as fp:
+            fp.write(data)
 
 
 def main():

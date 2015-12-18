@@ -1,21 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8; tab-width: 4; -*-
-# @(#) exp_deploy.py  Time-stamp: <Julian Qian 2015-12-08 16:28:32>
+# @(#) exp_deploy.py  Time-stamp: <Julian Qian 2015-12-18 16:41:32>
 # Copyright 2015 Julian Qian
 # Author: Julian Qian <junist@gmail.com>
 # Version: $Id: exp_deploy.py,v 0.1 2015-11-27 17:05:18 jqian Exp $
 #
 
-import sys
-import experiment_pb2 as expb
+import json
 from exp_defs import *
 from exp_log import logger
 
 
 class ExpDeploy(object):
-    def __init__(self, expdb, pb=None):
+    def __init__(self, expdb, json=None):
         self.db = expdb
-        self.pb = pb
+        self.json = json
         #
         self.domains = {}
         self.layers = {}
@@ -49,22 +48,30 @@ class ExpDeploy(object):
             layer = Layer(l.id, self.domains[l.domain_id])
             self.layers[l.id] = layer
 
+    @staticmethod
+    def _eq_exp(exp, expRow):
+        if exp.id == expRow.id and \
+           exp.layer_id == expRow.layer_id and \
+           exp.get_buckets_num() == expRow.buckets_num:
+            return True
+        return False
+
     def _build_experiments(self):
         # merge with existed experiments
         db_exps = {}
         for e in self.db.get_experiments():
             db_exps[e.id] = e
-        pb_exps = {}
-        if self.pb:
-            for l in self.pb.get_experiments():
-                pb_exps[l.id] = Experiment.from_pb(l)
-        for e in pb_exps:
+        json_exps = []
+        if self.json:
+            for e in self.json.get_experiments():
+                json_exps.append(Experiment.from_json(e))
+        for e in json_exps:
             layer = self.layers.get(e.layer_id)
             if not layer:
                 logger.warn('layer %d is not exists for exp %d',
                              e.layer_id, e.id)
                 continue
-            if e.id in db_exps:
+            if e.id in db_exps and self._eq_exp(e, db_exps[e.id]):
                 cnt = layer.load(e.id, e.ranges)
                 self.exps[e.id] = e
                 del db_exps[e.id]
@@ -84,26 +91,28 @@ class ExpDeploy(object):
         self._build_domains()
         self._build_layers()
         self._build_experiments()
-        deploy = expb.Deployment()
+        deploy = {}
         # parameters & experiments
         params = {}
+        deploy['experiments'] = []
         for e in self.exps.values():
-            print e
-            deploy.experiments.add().CopyFrom(e.to_pb())
-            # deploy.experiments.append(e.to_pb())
+            deploy['experiments'].append(e.to_json())
             for p in e.parameters:
                 pp = self.db.get_parameter(p.name)
                 param = Parameter(pp.name, pp.value, pp.type)
                 params[pp.name] = param
+        deploy['parameters'] = []
         for p in params.values():
-            deploy.parameters.add().CopyFrom(p.to_pb())
+            deploy['parameters'].append(p.to_json())
         # domains
+        deploy['domains'] = []
         for d in self.domains.values():
-            deploy.domains.add().CopyFrom(d.to_pb())
+            deploy['domains'].append(d.to_json())
         # layers
-        for d in self.layers.values():
-            deploy.layers.add().CopyFrom(d.to_pb())
-        return deploy.SerializeToString()
+        deploy['layers'] = []
+        for l in self.layers.values():
+            deploy['layers'].append(l.to_json())
+        return json.dumps(deploy)
 
 
 def main():

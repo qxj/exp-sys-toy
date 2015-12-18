@@ -1,5 +1,5 @@
 <?php
-// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-08 16:19:16>
+// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-18 15:55:34>
 // Copyright 2015 Julian Qian
 // Author: Julian Qian <junist@gmail.com>
 // Version: $Id: exp_defs.php,v 0.1 2015-12-02 16:12:19 jqian Exp $
@@ -20,8 +20,8 @@ class BucketRange {
   }
 
   public static
-  function fromPb($pb) {
-    return new self($pb->getStart(), $pb->getEnd());
+  function fromJson($json) {
+    return new self($json[0], $json[1]);
   }
 
   public
@@ -112,9 +112,9 @@ class Domain {
   }
 
   public static
-  function fromPb($pb) {  // \exp_sys\Domain
-    $range = $pb->getRange();
-    return new self($pb->getId(), BucketRange::fromPb($range));
+  function fromJson($json) {  // \exp_sys\Domain
+    $range = $json->{'range'};
+    return new self($json->{'id'}, BucketRange::fromJson($range));
   }
 
   public
@@ -192,29 +192,30 @@ class Experiment {
 
   public
   function toString() {
-    return sprintf("<Exp %d, layer %d, time (%s~%s)>", $this->id,
-                   $this->layer_id, $this->start_time, $this->end_time);
+    return sprintf("<Exp %d, layer %d(%s), time (%s~%s)>",
+                   $this->id, $this->layer_id, $this->diversion,
+                   $this->start_time, $this->end_time);
   }
 
   public static
-  function fromPb($pb) {
+  function fromJson($json) {
     $parameters = array();
-    foreach ($pb->getParameters() as $p) {
-      $param = Parameter::fromPb($p);
+    foreach ($json->{'parameters'} as $p) {
+      $param = Parameter::fromJson($p);
       $parameters[$param->getName()] = $param->getValue();
     }
     $conditions = array();
-    foreach ($pb->getConditions() as $c) {
-      $cond = Condition::fromPb($c);
+    foreach ($json->{'conditions'} as $c) {
+      $cond = Condition::fromJson($c);
       $conditions[$cond->getName()] = $cond->getArgs();
     }
     // TODO ranges seems useless
     $ranges = array();
-    foreach ($pb->getRanges() as $range) {
-      $ranges[] = BucketRange::fromPb($range);
+    foreach ($json->{'ranges'} as $range) {
+      $ranges[] = BucketRange::fromJson($range);
     }
-    return new self($pb->getId(), $pb->getLayerId(),
-            $pb->getStartTime(), $pb->getEndTime(), $pb->getDiversion(),
+    return new self($json->{'id'}, $json->{'layer_id'},
+            $json->{'start_time'}, $json->{'end_time'}, $json->{'diversion'},  //
             $parameters, $conditions, $ranges);
   }
 
@@ -280,29 +281,31 @@ class Parameter {
   public
   function __construct($name, $value, $type=null) {
     $this->name = $name;
-    switch ($type) {
-      case \exp_sys\Parameter\Type::BOOL:
-        if (strtolower($value) == 'true') {
-          $this->value = true;
-        } else {
-          $this->value = false;
-        }
-        break;
-      case \exp_sys\Parameter\Type::INT:
-        $this->value = intval($value);
-        break;
-      case \exp_sys\Parameter\Type::DOUBLE:
-        $this->value = doubleval($value);
-        break;
-      default:
-        $this->value = strval($value);
-        break;
-    }
+    $this->value = $value;
+    $this->type = $type;
+    // switch ($type) {
+    //   case \exp_sys\Parameter\Type::BOOL:
+    //     if (strtolower($value) == 'true') {
+    //       $this->value = true;
+    //     } else {
+    //       $this->value = false;
+    //     }
+    //     break;
+    //   case \exp_sys\Parameter\Type::INT:
+    //     $this->value = intval($value);
+    //     break;
+    //   case \exp_sys\Parameter\Type::DOUBLE:
+    //     $this->value = doubleval($value);
+    //     break;
+    //   default:
+    //     $this->value = strval($value);
+    //     break;
+    // }
   }
 
   public static
-  function fromPb($pb) {
-    return new self($pb->getName(), $pb->getValue(), $pb->getType());
+  function fromJson($json) {
+    return new self($json->{'name'}, $json->{'value'}, $json->{'type'});
   }
 
   public
@@ -324,8 +327,8 @@ class Condition {
   }
 
   public static
-  function fromPb($pb) {
-    return new self($pb->getName(), $pb->getArgs());
+  function fromJson($json) {
+    return new self($json->{'name'}, $json->{'args'});
   }
 
   public

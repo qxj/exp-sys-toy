@@ -1,5 +1,5 @@
 <?php
-// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-10 12:29:16>
+// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-18 15:54:06>
 // Copyright 2015 Julian Qian
 // Author: Julian Qian <junist@gmail.com>
 // Version: $Id: exp_defs.php,v 0.1 2015-11-18 11:14:00 jqian Exp $
@@ -12,19 +12,16 @@
 
 // error_reporting(E_ALL ^ E_NOTICE);
 
-require_once __DIR__ . "/experiment.proto.php";
 require_once __DIR__ . "/exp_defs.php";
 
-// use \DrSlump\Protobuf;
-use \exp_sys\Diversion as DIV;
 
 class ExpSys {
   private static $_instance = null;
   // firstly, divert by uuid, ... finally, divert by random
   private $_diversions = array(
-      DIV::UUID   => null,
-      DIV::USER   => null,
-      DIV::RANDOM => null);
+      'uuid'   => null,
+      'USER'   => null,
+      'RANDOM' => null);
   private $_layers = array();
   private $_exps = array();
   // parameters with default value
@@ -37,9 +34,9 @@ class ExpSys {
   private
   function __construct() {
     srand(time());
-    $this->_diversions[DIV::RANDOM] = rand(0, BUCKETS_NUM_MAX -1);
+    $this->_diversions['random'] = rand(0, BUCKETS_NUM_MAX -1);
     if (isset($_SERVER['HTTP_UUID'])) {
-      $this->_diversions[DIV::UUID] = $_SERVER['HTTP_UUID'];
+      $this->_diversions['uuid'] = $_SERVER['HTTP_UUID'];
     }
     //
     try {
@@ -55,28 +52,28 @@ class ExpSys {
     $deploy = $this->_get_deploy();
     // get domains
     $domains = array();
-    foreach ($deploy->getDomains() as $d) {
-      $domain = Domain::fromPb($d);
+    foreach ($deploy->{'domains'} as $d) {
+      $domain = Domain::fromJson($d);
       $domains[$domain->getId()] = $domain;
       Logger::debug("load domain %s", $domain->toString());
     }
     // get layers
-    foreach ($deploy->getLayers() as $l) {
-      $domain = $domains[$l->getDomainId()];
-      $layer = new Layer($l->getId(), $domain);
-      $this->_layers[$l->getId()] = $layer;
+    foreach ($deploy->{'layers'} as $l) {
+      $domain = $domains[$l->{'domain_id'}];
+      $layer = new Layer($l->{'id'}, $domain);
+      $this->_layers[$l->{'id'}] = $layer;
       Logger::debug("load layer %s", $layer->toString());
     }
     // assign experiments
-    foreach ($deploy->getExperiments() as $e) {
-      $exp = Experiment::fromPb($e);
+    foreach ($deploy->{'experiments'} as $e) {
+      $exp = Experiment::fromJson($e);
       $this->_exps[$exp->getId()] = $exp;
       $layer = $this->_layers[$exp->getLayerId()];
       $layer->assign($exp);
       Logger::debug("load exp %s", $exp->toString());
     }
-    foreach ($deploy->getParameters() as $p) {
-      $param = Parameter::fromPb($p);
+    foreach ($deploy->{'parameters'} as $p) {
+      $param = Parameter::fromJson($p);
       $this->_baseParams[$param->getName()] = $param->getValue();
       Logger::debug("load param %s => %s", $param->getName(), $param->getValue());
     }
@@ -89,27 +86,27 @@ class ExpSys {
       $deploy_apc_key = 'deploy';
       $deploy = apc_fetch($deploy_apc_key);
       if ($deploy === false) {
-        $deploy = $this->_get_deploy_pb();
+        $deploy = $this->_get_deploy_json();
         apc_store($deploy_apc_key, $deploy, 60);  // 60s expiration
       }
     } else {
-      $deploy = $this->_get_deploy_pb();
+      $deploy = $this->_get_deploy_json();
     }
     return $deploy;
   }
 
   private
-  function _get_deploy_pb() {
-    // init experiment space from pb
-    $pb_file = __DIR__ . '/exp_sys.pb';
+  function _get_deploy_json() {
+    // init experiment space from json
+    $json_file = __DIR__ . '/exp_sys.json';
     if (class_exists('F3')) {
-      $pb_file = F3::get('PDEXP.FILE');
+      $json_file = F3::get('PDEXP.FILE');
     }
-    $data = @file_get_contents($pb_file);
+    $data = @file_get_contents($json_file);
     if ($data === false) {
-      throw new Exception("pb file $pb_file is missing");
+      throw new Exception("json file $json_file is missing");
     }
-    return \exp_sys\Deployment::parseFromString($data);
+    return @json_decode($data);
   }
 
   private static
@@ -120,7 +117,7 @@ class ExpSys {
   private static
   function _divert_id($id, $layer_id) {
     $new_id = sprintf("%s_%s", $id, $layer_id);
-    return self::hash_id($new_id) % BUCKETS_NUM_MAX;
+    return self::_hash_id($new_id) % BUCKETS_NUM_MAX;
   }
 
   private
@@ -148,7 +145,7 @@ class ExpSys {
   function _divert() {
     foreach ($this->_diversions as $diversion => $divId) {
       if ($divId !== null) {
-        Logger::debug("start diversion %s", $diversion);
+        Logger::debug("start diversion %s, id %s", $diversion, $divId);
         foreach ($this->_layers as &$layer) {
           Logger::debug("process layer %d", $layer->getId());
           if (!$layer->bias()) {
@@ -214,7 +211,7 @@ class ExpSys {
 
   public
   function reset_for_test() {  // only for test
-    $this->_diversions[DIV::RANDOM] = rand(0, BUCKETS_NUM_MAX -1);
+    $this->_diversions['random'] = rand(0, BUCKETS_NUM_MAX -1);
     $this->_divParams = array();
     $this->_params = array();
     $this->_divert();

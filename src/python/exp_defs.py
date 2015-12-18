@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8; tab-width: 4; -*-
-# @(#) exp_defs.py  Time-stamp: <Julian Qian 2015-12-02 17:56:08>
+# @(#) exp_defs.py  Time-stamp: <Julian Qian 2015-12-18 16:39:54>
 # Copyright 2015 Julian Qian
 # Author: Julian Qian <junist@gmail.com>
 # Version: $Id: exp_defs.py,v 0.1 2015-11-13 17:09:51 jqian Exp $
@@ -9,7 +9,6 @@
 import collections
 import json
 
-import experiment_pb2 as expb
 from exp_log import logger
 
 
@@ -112,8 +111,8 @@ class Buckets(object):
                     if br.start <= bkt.offset < br.end:
                         if bkt.assign_id == self.init_id:
                             bkt.assign_id = assign_id
-                            logger.info('assign bucket %d to %d',
-                                         bkt.offset, assign_id)
+                            # logger.debug('assign bucket %d to %d',
+                            #              bkt.offset, assign_id)
                             loaded_cnt += 1
                         else:
                             logger.error('bucket %d has been assigned to %d',
@@ -130,20 +129,20 @@ class BucketRange(object):
         self.end = end
 
     @classmethod
-    def from_pb(cls, pb):
-        return cls(pb.start, pb.end)
+    def from_json(cls, json):
+        return cls(json[0], json[1])
 
-    def to_pb(self):
-        pb = expb.BucketRange()
-        pb.start = self.start
-        pb.end = self.end
-        return pb
+    def to_json(self):
+        return [self.start, self.end]
 
     def __eq__(self, o):
         return self.start == o.start and self.end == o.end
 
     def __str__(self):
         return '<BucketRange [%d-%d)>' % (self.start, self.end)
+
+    def get_buckets_num(self):
+        return self.end - self.start
 
 
 class Domain(object):
@@ -156,15 +155,14 @@ class Domain(object):
         bucketRanges = [BucketRange(offset, offset+buckets_num)]
         return cls(id, bucketRanges)
 
-    def to_pb(self):
-        pb = expb.Domain()
-        pb.id = self.id
+    def to_json(self):
+
         bucketRanges = self.buckets.get_bucket_ranges()
         if len(bucketRanges) > 1:
             logger.warn('domain %d, something wrong? to many buckets',
                         self.id)
-        pb.range.CopyFrom(bucketRanges[0].to_pb())
-        return pb
+        return {'id': self.id,
+                'range': bucketRanges[0].to_json()}
 
     def assign(self, assign_id, buckets_num):
         return self.buckets.assign(assign_id, buckets_num)
@@ -183,11 +181,9 @@ class Layer(object):
         bucketRanges = domain.buckets.get_bucket_ranges()
         self.buckets = Buckets(bucketRanges, -1000 + self.id)
 
-    def to_pb(self):
-        pb = expb.Layer()
-        pb.id = self.id
-        pb.domain_id = self.domain_id
-        return pb
+    def to_json(self):
+        return {'id': self.id,
+                'domain_id': self.domain_id}
 
     def load(self, assign_id, bucketRanges):
         return self.buckets.load(assign_id, bucketRanges)
@@ -199,27 +195,6 @@ class Layer(object):
         return "<Layer %d (D%d)>" % (self.id, self.domain_id)
 
 
-class Diversion(object):
-    def __init__(self, type):
-        self.type = type
-
-    @classmethod
-    def from_pb(cls, type):
-        return cls(type)
-
-    @classmethod
-    def from_db(cls, type):
-        t = expb.RANDOM
-        if type == 'uuid':
-            t = expb.UUID
-        elif type == 'user':
-            t = expb.USER
-        return cls(t)
-
-    def to_pb(self):
-        return self.type
-
-
 class Condition(object):
     def __init__(self, name, args):
         '''@param args, list of condition string
@@ -228,15 +203,12 @@ class Condition(object):
         self.args = args
 
     @classmethod
-    def from_pb(cls, pb):
-        return cls(pb.name, [i for i in pb.args])
+    def from_json(cls, json):
+        return cls(json['name'], json['args'])
 
-    def to_pb(self):
-        pb = expb.Condition()
-        pb.name = self.name
-        for arg in self.args:
-            pb.args.add().CopyFrom(arg)
-        return pb
+    def to_json(self):
+        return {'name': self.name,
+                'args': self.args}
 
     def __str__(self):
         return "<Condition %s>" % self.name
@@ -245,47 +217,69 @@ class Condition(object):
 class Parameter(object):
     def __init__(self, name, value, type=None):
         self.name = name
-        self.value = value
         if type:
             self.type = self._trans_type(type)
         else:
             self.type = self._valid_type(value)
+        self.value = self._trans_value(value, self.type)
 
     @staticmethod
     def _valid_type(value):
-        t = expb.Parameter.STRING
+        t = 'string'
         if isinstance(value, bool):
-            t = expb.Parameter.BOOL
+            t = 'bool'
         elif isinstance(value, int):
-            t = expb.Parameter.INT
+            t = 'int'
         elif isinstance(value, float):
-            t = expb.Parameter.DOUBLE
+            t = 'double'
         return t
 
     @staticmethod
-    def _trans_type(type):
-        t = expb.Parameter.STRING
-        if type.lower() == 'int':
-            t = expb.Parameter.INT
-        elif type.lower() == 'bool':
-            t = expb.Parameter.BOOL
-        elif type.lower() == 'double':
-            expb.Parameter.DOUBLE
-        return t
+    def _trans_type(t):
+        if t in ('bool', 'int', 'string', 'double'):
+            return str(t)
+        else:
+            return 'string'
+
+    @staticmethod
+    def _trans_value(value, type):
+        if Parameter._valid_type(value) == type:
+            return value
+        # else value is a string
+        ret = None
+        if type == 'bool':
+            if value.lower() == 'true':
+                ret = True
+            else:
+                ret = False
+        elif type == 'int':
+            ret = int(value)
+        elif type == 'double':
+            ret = float(value)
+        else:
+            ret = str(value)
+        return ret
 
     @classmethod
-    def from_pb(cls, pb):
-        return cls(pb.name, pb.value, pb.type)
+    def from_json(cls, json):
+        return cls(json['name'], json['value'], json['type'])
 
-    def to_pb(self):
-        pb = expb.Parameter()
-        pb.name = self.name
-        pb.value = str(self.value)
-        pb.type = self.type
-        return pb
+    def to_json(self):
+        return {'name': self.name,
+                'value': self.value,
+                'type': self.type}
 
     def __str__(self):
         return "<Parameter %s: %s>" % (self.name, self.value)
+
+
+class Diversion(object):
+    @staticmethod
+    def valid(d):
+        if d in ('uuid', 'user', 'random'):
+            return d
+        else:
+            return 'random'
 
 
 class Experiment(object):
@@ -308,18 +302,17 @@ class Experiment(object):
         self.conditions = conditions
 
     @classmethod
-    def from_pb(cls, pb):
-        diversion = Diversion.from_pb(pb.diversion)
-        ranges = [BucketRange.from_pb(i) for i in pb.ranges]
-        parameters = [Parameter.from_pb(i) for i in pb.parameters]
-        conditions = [Condition.from_pb(i) for i in pb.conditions]
-        return cls(pb.id, pb.layer_id, diversion,
-                   pb.start_time, pb.end_time,
+    def from_json(cls, json):
+        ranges = [BucketRange.from_json(i) for i in json['ranges']]
+        parameters = [Parameter.from_json(i) for i in json['parameters']]
+        conditions = [Condition.from_json(i) for i in json['conditions']]
+        return cls(json['id'], json['layer_id'], json['diversion'],
+                   json['start_time'], json['end_time'],
                    ranges, parameters, conditions)
 
     @classmethod
     def from_db(cls, row):
-        diversion = Diversion.from_db(row.diversion)
+        diversion = Diversion.valid(row.diversion)
         logger.debug('row: %s', row)
         ret = json.loads(row.parameters) if row.parameters else {}
         parameters = [Parameter(name, value) for name, value in ret.items()]
@@ -329,25 +322,27 @@ class Experiment(object):
                    '%s' % row.start_time, '%s' % row.end_time,
                    None, parameters, conditions)
 
-    def to_pb(self):
-        pb = expb.Experiment()
-        pb.id = self.id
-        pb.layer_id = self.layer_id
-        pb.diversion = self.diversion.to_pb()
-        pb.start_time = self.start_time
-        pb.end_time = self.end_time
-        for i in self.ranges:
-            pb.ranges.add().CopyFrom(i.to_pb())
-        for i in self.parameters:
-            pb.parameters.add().CopyFrom(i.to_pb())
-        for i in self.conditions:
-            pb.conditions.add().CopyFrom(i.to_pb())
-        return pb
+    def to_json(self):
+        # return self.__dict__
+        return {'id': self.id,
+                'layer_id': self.layer_id,
+                'diversion': self.diversion,
+                'start_time': self.start_time,
+                'end_time': self.end_time,
+                'ranges': [i.to_json() for i in self.ranges],
+                'parameters': [i.to_json() for i in self.parameters],
+                'conditions': [i.to_json() for i in self.conditions]}
 
     def set_bucket_ranges(self, bucketRanges):
         '''fill BucketRanges after calling `from_db`
         '''
         self.ranges = bucketRanges
+
+    def get_buckets_num(self):
+        num = 0
+        for br in self.ranges:
+            num += br.get_buckets_num()
+        return num
 
     def __eq__(self, o):
         if self.id == o.id and \
@@ -360,7 +355,8 @@ class Experiment(object):
         return False
 
     def __str__(self):
-        return "<Experiment %d (L%d)>" % (self.id, self.layer_id)
+        return "<Experiment %d, Layer %d, Buckets %d)>" % (
+            self.id, self.layer_id, self.get_buckets_num())
 
 
 def main():

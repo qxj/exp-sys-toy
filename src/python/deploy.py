@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8; tab-width: 4; -*-
-# @(#) deploy.py  Time-stamp: <Julian Qian 2015-12-02 15:27:15>
+# @(#) deploy.py  Time-stamp: <Julian Qian 2015-12-18 15:08:19>
 # Copyright 2015 Julian Qian
 # Author: Julian Qian <junist@gmail.com>
 # Version: $Id: deploy.py,v 0.1 2015-11-10 11:24:01 jqian Exp $
@@ -17,7 +17,7 @@ import argparse
 import ConfigParser
 
 from exp_deploy import ExpDeploy
-from exp_db import DbConf, ExpDb, ExpPb
+from exp_db import DbConf, ExpDb, ExpJson
 from exp_log import logger
 
 
@@ -38,12 +38,12 @@ def main():
                            config.get('mysql', 'passwd'),
                            config.get('mysql', 'dbname')])
     db = ExpDb(dbconf)
-    pb = None
+    json = None
     try:
-        pb = ExpPb(args.input)
+        json = ExpJson(args.input)
     except:
-        logger.warn('failed to load pb file %s', args.input)
-    ed = ExpDeploy(db, pb)
+        logger.warn('failed to load json file %s', args.input)
+    ed = ExpDeploy(db, json)
     data = ed.build()
     logger.info('dump deployment (%d bytes) to file %s',
                 len(data), args.output)
