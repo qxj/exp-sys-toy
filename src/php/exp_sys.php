@@ -1,6 +1,6 @@
 <?php
-// @(#) exp_defs.php  Time-stamp: <Julian Qian 2015-12-18 15:54:06>
-// Copyright 2015 Julian Qian
+// @(#) exp_defs.php  Time-stamp: <Julian Qian 2016-01-13 11:17:17>
+// Copyright 2015, 2016 Julian Qian
 // Author: Julian Qian <junist@gmail.com>
 // Version: $Id: exp_defs.php,v 0.1 2015-11-18 11:14:00 jqian Exp $
 //
@@ -20,8 +20,8 @@ class ExpSys {
   // firstly, divert by uuid, ... finally, divert by random
   private $_diversions = array(
       'uuid'   => null,
-      'USER'   => null,
-      'RANDOM' => null);
+      'user'   => null,
+      'random' => null);
   private $_layers = array();
   private $_exps = array();
   // parameters with default value
@@ -38,7 +38,7 @@ class ExpSys {
     if (isset($_SERVER['HTTP_UUID'])) {
       $this->_diversions['uuid'] = $_SERVER['HTTP_UUID'];
     }
-    //
+    // build exp_sys
     try {
       $this->_build();
     } catch (Exception $e) {
@@ -98,9 +98,15 @@ class ExpSys {
   private
   function _get_deploy_json() {
     // init experiment space from json
-    $json_file = __DIR__ . '/exp_sys.json';
+    $json_file = "";
     if (class_exists('F3')) {
       $json_file = F3::get('PDEXP.FILE');
+    }
+    if (!$json_file) {
+      $json_file = '/home/work/exp_sys.json';
+    }
+    if (!file_exists($json_file)) {
+      $json_file = __DIR__ . '/exp_sys.json';
     }
     $data = @file_get_contents($json_file);
     if ($data === false) {
@@ -145,7 +151,7 @@ class ExpSys {
   function _divert() {
     foreach ($this->_diversions as $diversion => $divId) {
       if ($divId !== null) {
-        Logger::debug("start diversion %s, id %s", $diversion, $divId);
+        Logger::trace("start diversion %s, id %s", $diversion, $divId);
         foreach ($this->_layers as &$layer) {
           Logger::debug("process layer %d", $layer->getId());
           if (!$layer->bias()) {
@@ -162,7 +168,8 @@ class ExpSys {
                   // check conditions
                   if ($this->_valid_conditions($exp)) {
                     $this->_params = array_merge($this->_params, $exp->getParamMap());
-                    Logger::debug("hit experiment %d", $exp->getId());
+                    Logger::trace("active experiment %d in layer %d",
+                            $exp->getId(), $layer->getId());
                   } else {
                     $layer->bias(true);
                     Logger::debug("biased layer %d", $layer->getId());
@@ -188,6 +195,14 @@ class ExpSys {
     return self::$_instance;
   }
 
+  public static
+  function diverted_params() {  // for logger and stats
+    if (self::$_instance == null) {
+      return array();
+    } else {
+      return self::$_instance->_divParams;
+    }
+  }
 
   public
   function get($name) {
@@ -195,18 +210,13 @@ class ExpSys {
       $value = $this->_params[$name];
       // log parameters
       $this->_divParams[$name] = $value;
-      Logger::debug("get paramter %s => %s", $name, $value);
+      Logger::trace("get paramter %s => %s", $name, $value);
       return $value;
     }
     if (array_key_exists($name, $this->_baseParams)) {
       return $this->_baseParams[$name];
     }
     return null;
-  }
-
-  public
-  function diverted_params() {  // for logger and stats
-    return $this->_divParams;
   }
 
   public
