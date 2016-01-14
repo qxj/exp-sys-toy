@@ -230,7 +230,7 @@ DROP TABLE IF EXISTS `user`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `user` (
-  `user_id` int(11) NOT NULL COMMENT '和icars_zh的user表保持同步',
+  `user_id` int(11) NOT NULL COMMENT '和user表保持同步',
   `username` varchar(45) CHARACTER SET latin1 DEFAULT NULL,
   `role` enum('user','manager','admin') DEFAULT NULL COMMENT '角色（普通用户、审核用户、管理员）',
   PRIMARY KEY (`user_id`)
